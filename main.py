@@ -143,4 +143,41 @@ def train_generator(opt_g):
 
     return loss.item()
 
+
+def fit(epochs, lr, start_idx=1):
+    torch.cuda.empty_cache()
+
+    # Losses & scores
+    losses_g = []
+    losses_d = []
+    real_scores = []
+    fake_scores = []
+
+    # Create optimizers
+    opt_d = torch.optim.Adam(discriminator.parameters(), lr=lr, betas=(0.5, 0.999))
+    opt_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
+
+    for epoch in range(epochs):
+        for real_images, _ in tqdm(train_dl):
+            # Train discriminator
+            loss_d, real_score, fake_score = train_discriminator(real_images, opt_d)
+            # Train generator
+            loss_g = train_generator(opt_g)
+
+        # Record losses & scores
+        losses_g.append(loss_g)
+        losses_d.append(loss_d)
+        real_scores.append(real_score)
+        fake_scores.append(fake_score)
+
+        # Log losses & scores (last batch)
+        print("Epoch [{}/{}], loss_g: {:.4f}, loss_d: {:.4f}, real_score: {:.4f}, fake_score: {:.4f}".format(
+            epoch + 1, epochs, loss_g, loss_d, real_score, fake_score))
+
+        # Save generated images
+        save_samples(epoch + start_idx, fixed_latent, show=False)
+
+    return losses_g, losses_d, real_scores, fake_scores
+
+
 print("Done!")
