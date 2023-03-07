@@ -179,5 +179,6 @@ def fit(epochs, lr, start_idx=1):
 
     return losses_g, losses_d, real_scores, fake_scores
 
+history = fit(epochs, lr)
 
 print("Done!")
