@@ -19,13 +19,30 @@ image_size = 64
 batch_size = 128
 stats = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
 
-train_ds = ImageFolder(DATA_DIR, transform=tt.Compose([ tt.Resize(image_size),
-                                                        tt.CenterCrop(image_size),
-                                                        tt.ToTensor(),
-                                                        tt.Normalize(*stats)]))
+train_ds = ImageFolder(DATA_DIR,
+                       transform=tt.Compose([
+                           tt.Resize(image_size),
+                           tt.CenterCrop(image_size),
+                           tt.ToTensor(),
+                           tt.Normalize(*stats)]))
 
 train_dl = DataLoader(train_ds, batch_size, shuffle=True, num_workers=3, pin_memory=True)
 
+def denorm(img_tensors):
+    return img_tensors * stats[1][0] + stats[0][0]
+
+def show_images(filename, images, nmax=64):
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.imshow(make_grid(denorm(images.detach()[:nmax]), nrow=8).permute(1, 2, 0))
+    plt.savefig(filename)
+
+def show_batch(dl, filename, nmax=64):
+    for images, _ in dl:
+        show_images(filename, images, nmax)
+        break
+
+show_batch(train_dl, 'figura1.png')
 generator = nn.Sequential(
     # in: latent_size x 1 x 1
 
