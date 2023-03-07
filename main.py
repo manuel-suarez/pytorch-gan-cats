@@ -43,33 +43,39 @@ def show_batch(dl, filename, nmax=64):
         break
 
 show_batch(train_dl, 'figura1.png')
-generator = nn.Sequential(
-    # in: latent_size x 1 x 1
 
-    nn.ConvTranspose2d(latent_size, 512, kernel_size=4, stride=1, padding=0, bias=False),
-    nn.BatchNorm2d(512),
-    nn.ReLU(True),
-    # out: 512 x 4 x 4
+def get_default_device():
+    """Pick GPU if available, else CPU"""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
 
-    nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1, bias=False),
-    nn.BatchNorm2d(256),
-    nn.ReLU(True),
-    # out: 256 x 8 x 8
+def to_device(data, device):
+    """Move tensor(s) to chosen device"""
+    if isinstance(data, (list,tuple)):
+        return [to_device(x, device) for x in data]
+    return data.to(device, non_blocking=True)
 
-    nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1, bias=False),
-    nn.BatchNorm2d(128),
-    nn.ReLU(True),
-    # out: 128 x 16 x 16
+class DeviceDataLoader():
+    """Wrap a dataloader to move data to a device"""
+    def __init__(self, dl, device):
+        self.dl = dl
+        self.device = device
 
-    nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
-    nn.BatchNorm2d(64),
-    nn.ReLU(True),
-    # out: 64 x 32 x 32
+    def __iter__(self):
+        """Yield a batch of data after moving it to device"""
+        for b in self.dl:
+            yield to_device(b, self.device)
 
-    nn.ConvTranspose2d(64, 3, kernel_size=4, stride=2, padding=1, bias=False),
-    nn.Tanh()
-    # out: 3 x 64 x 64
-)
+    def __len__(self):
+        """Number of batches"""
+        return len(self.dl)
+
+device = get_default_device()
+device
+
+train_dl = DeviceDataLoader(train_dl, device)
 
 discriminator = nn.Sequential(
     # in: 3 x 64 x 64
@@ -100,19 +106,42 @@ discriminator = nn.Sequential(
     nn.Flatten(),
     nn.Sigmoid())
 
-sample_dir = 'generated'
-os.makedirs(sample_dir, exist_ok=True)
+discriminator = to_device(discriminator, device)
+latent_size = 128
+generator = nn.Sequential(
+    # in: latent_size x 1 x 1
 
-def save_samples(index, latent_tensors, show=True):
-    fake_images = generator(latent_tensors)
-    fake_fname = 'generated-images-{0:0=4d}.png'.format(index)
-    save_image(denorm(fake_images), os.path.join(sample_dir, fake_fname), nrow=8)
-    print('Saving', fake_fname)
-    if show:
-        fig, ax = plt.subplots(figsize=(8, 8))
-        ax.set_xticks([]); ax.set_yticks([])
-        ax.imshow(make_grid(fake_images.cpu().detach(), nrow=8).permute(1, 2, 0))
+    nn.ConvTranspose2d(latent_size, 512, kernel_size=4, stride=1, padding=0, bias=False),
+    nn.BatchNorm2d(512),
+    nn.ReLU(True),
+    # out: 512 x 4 x 4
 
+    nn.ConvTranspose2d(512, 256, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.BatchNorm2d(256),
+    nn.ReLU(True),
+    # out: 256 x 8 x 8
+
+    nn.ConvTranspose2d(256, 128, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.BatchNorm2d(128),
+    nn.ReLU(True),
+    # out: 128 x 16 x 16
+
+    nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.BatchNorm2d(64),
+    nn.ReLU(True),
+    # out: 64 x 32 x 32
+
+    nn.ConvTranspose2d(64, 3, kernel_size=4, stride=2, padding=1, bias=False),
+    nn.Tanh()
+    # out: 3 x 64 x 64
+)
+
+xb = torch.randn(batch_size, latent_size, 1, 1)
+fake_images = generator(xb)
+print(fake_images.shape)
+show_images('figura2.png', fake_images)
+
+generator = to_device(generator, device)
 
 def train_discriminator(real_images, opt_d):
     # Clear discriminator gradients
@@ -160,6 +189,21 @@ def train_generator(opt_g):
 
     return loss.item()
 
+sample_dir = 'generated'
+os.makedirs(sample_dir, exist_ok=True)
+
+def save_samples(index, latent_tensors, show=True):
+    fake_images = generator(latent_tensors)
+    fake_fname = 'generated-images-{0:0=4d}.png'.format(index)
+    save_image(denorm(fake_images), os.path.join(sample_dir, fake_fname), nrow=8)
+    print('Saving', fake_fname)
+    if show:
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.imshow(make_grid(fake_images.cpu().detach(), nrow=8).permute(1, 2, 0))
+
+fixed_latent = torch.randn(64, latent_size, 1, 1, device=device)
+save_samples(0, fixed_latent)
 
 def fit(epochs, lr, start_idx=1):
     torch.cuda.empty_cache()
@@ -175,7 +219,7 @@ def fit(epochs, lr, start_idx=1):
     opt_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
 
     for epoch in range(epochs):
-        for real_images, _ in tqdm(train_dl):
+        for real_images in train_dl:
             # Train discriminator
             loss_d, real_score, fake_score = train_discriminator(real_images, opt_d)
             # Train generator
@@ -196,6 +240,27 @@ def fit(epochs, lr, start_idx=1):
 
     return losses_g, losses_d, real_scores, fake_scores
 
+lr = 0.0002
+epochs = 60
 history = fit(epochs, lr)
+
+losses_g, losses_d, real_scores, fake_scores = history
+plt.plot(losses_d, '-')
+plt.plot(losses_g, '-')
+plt.xlabel('epoch')
+plt.ylabel('loss')
+plt.legend(['Discriminator', 'Generator'])
+plt.title('Losses');
+plt.savefig('figura3.png')
+plt.close()
+
+plt.plot(real_scores, '-')
+plt.plot(fake_scores, '-')
+plt.xlabel('epoch')
+plt.ylabel('score')
+plt.legend(['Real', 'Fake'])
+plt.title('Scores');
+plt.savefig('figura4.png')
+plt.close()
 
 print("Done!")
