@@ -15,3 +15,5 @@ import matplotlib.pyplot as plt
 DATA_DIR = '/home/est_posgrado_manuel.suarez/data/cats-faces/'
 
 print(os.listdir(DATA_DIR))
+
+print("Done!")
